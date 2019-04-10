@@ -1,0 +1,102 @@
+---
+title: "Интерактивные карты с GVis, plotly и leaflet"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    self_contained: yes
+
+---
+
+```{r setup, warning = F, message = F}
+# загрузка пакетов
+library('data.table')
+library('WDI')
+library('leaflet')
+library('RCurl') 
+library('jsonlite') 
+library('XML') 
+# devtools::install_github('mages/googleVis')
+suppressPackageStartupMessages(library('googleVis'))
+
+# для загрузки свежей версии pandoc:
+#  https://github.com/pandoc-extras/pandoc-nightly/releases/tag/hash-7c20fab3
+#  архив pandoc-windows-7c20fab3.zip распаковать в RStudio/bin/pandoc
+```
+
+
+## Интерактивная картограмма  
+
+Интерактивная картограмма на данных Всемирного Банка по [Обученные учителя начального образования (% от общего числа учителей)](https://data.worldbank.org/indicator/SE.PRM.TCAQ.ZS) за 2015 год.     
+
+```{r Интерактивная картограмма, results = 'asis', cashe = T}
+# данные по ВВП по ППП
+indicator.code <- 'SE.PRM.TCAQ.ZS'
+DT <- data.table(WDI(indicator = indicator.code, start = 2015, end = 2015))
+
+# все коды стран iso2
+fileURL <- 'https://pkgstore.datahub.io/core/country-list/data_csv/data/d7c9d7cfb42cb69f4422dec222dbbaa8/data_csv.csv'
+all.iso2.country.codes <- read.csv(fileURL, stringsAsFactors = F, 
+                                   na.strings = '.')
+
+# убираем макрорегионы
+DT <- na.omit(DT[iso2c %in% all.iso2.country.codes$Code,])
+
+# объект: таблица исходных данных
+g.tbl <- gvisTable(data = DT[, -'year'],, 
+                   options = list(width = 300, height = 400))
+# объект: интерактивная карта
+g.chart <- gvisGeoChart(data = DT, 
+                        locationvar = 'iso2c', 
+                        hovervar = 'country',
+                        colorvar = indicator.code, 
+                        options = list(width = 500, 
+                                       height = 400, 
+                                       dataMode = 'regions'))
+# размещаем таблицу и карту на одной панели (слева направо)
+TG <- gvisMerge(g.tbl, g.chart, 
+                horizontal = TRUE, 
+                tableOptions = 'bgcolor=\"#CCCCCC\" cellspacing=10')
+
+# вставляем результат в html-документ
+TG
+
+```
+
+
+```{r 2ая часть, results = 'asis', cashe = T}
+
+URL.base <- 'http://data.gov.ru/api/' 
+API.key <- '7f15230a0b2703b7045a068d9a49679f' 
+getOpenDataRF <- function(api.params, url.base = URL.base, api.key = API.key) {    
+  par <- paste0(api.params, collapse = '/')    
+  url <- paste0(url.base, par, '/?access_token=', api.key)    
+  message(paste0('Загружаем', url, ' ...'))    
+  fromJSON(getURL(url)) }
+
+# загрузка таблицы-индекса с именами и id всех наборов данных 
+params <- c('dataset') 
+datasets <- getOpenDataRF(params) 
+
+# общее количество наборов и структура таблицы-индекса 
+nrow(datasets) 
+#> [1] 10000 
+str(datasets) 
+# количество наборов данных по тематике 
+table(datasets$topic) 
+# несколько таблиц из начала таблицы-индекса 
+head(datasets[, c('title', 'identifier')]) 
+# найдём таблицы с именами, которые содержат "Костром"     
+doc <- datasets[grep('Костром', datasets$title), c('identifier', 'topic', 'title')] 
+# прежде чем выводить в отчёт, уберём лишние пробелы 
+doc$title <- gsub('^[ ]*', '', doc$title)
+doc
+
+dataset_id <- '4401168294-oknkosobl' 
+params <- c('dataset', dataset_id, 'version') 
+versions <- getOpenDataRF(params) #>Загружаемhttp://data.gov.ru/api/dataset/8901017727shematbo/version/?access_token=замените_на_свой_ключ_API_data.gov.ru ... 
+params <- c(params, versions[nrow(versions), 1], 'content') 
+dataset <- getOpenDataRF(params) #>Загружаемhttp://data.gov.ru/api/dataset/8901017727shematbo/version/20170315T161218/content/?access_token=замените_на_свой_ключ_API_d ata.gov.ru ... 
+head(dataset) 
+
+
+```
